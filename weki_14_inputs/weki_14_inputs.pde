@@ -7,7 +7,7 @@
 
 //Updated 07/19 Pawel Kudel edit
 //Added a function for processing audio files
-//use keyboard to select gesture number
+//use number keys to select gesture number
 //then the GUI button to select an audio file
 
 import ddf.minim.*;
@@ -17,44 +17,61 @@ import ddf.minim.effects.*;
 import oscP5.*;
 import netP5.*;
 
-OscP5 oscP5;
+//
+
+OscP5      oscP5;
 NetAddress dest;
 
-AudioPlayer audioSample;
 
-Button selectButton = new Button();
-File soundSelected;
-boolean samplePlaying = false;
-int currentGestureNo = 1;
 
 Minim       minim;
 AudioInput  myAudio; //Use líne in input (microphone/soundflower/lineIn)
-AudioSample mySample; //Use an audio sample
+AudioPlayer mySample;
 FFT         myAudioFFT;
 
+Button      selectButton = new Button();
+Button      toggleButton = new Button();
+File        soundSelected;
+
 int         myAudioRange     = 13;
-int         myAudioMax       = 100;
+int         myAudioMax       = 180;
 float       myAudioAmp       = 200.0;
 float       myAudioIndex     = 0.2;
 float       myAudioIndexAmp  = myAudioIndex;
 float       myAudioIndexStep = 0.35;
 
-float avgVolume = 0;
+float       audioBarPosX = 250;
+float       audioBarPosY = 10;
+float       audioBarSpread = 20;
 
-boolean sending = false;
-color bgColor; 
-boolean thresholdMode = true;
-float volThreshold = 2.0;
+float       UI_X = 10;
+float       UI_Y = 20;
+float       UI_Off = 20;
+float       UI_bttns = 30;
 
-boolean triggerMode = false;
+float       avgVolume = 0;
+float       volThreshold = 2.0;
 
-int triggerTimerThreshold = 200;
-long startTimer = 0;
+int         currentGestureNo = 1;
+int         triggerTimerThreshold = 200;
+
+long        startTimer = 0;
+
+boolean     triggerMode = false;
+boolean     sending = false;
+boolean     thresholdMode = true;
+boolean     samplePlaying = false;
+
+color       bgColor; 
+color       white = color(255);
+color       black = color(0);
+color       red = color(255, 0, 0);
+color       c_sending = color(20, 80, 20);
+color       c_notSending = color(80, 20, 20);
 
 
 void setup() {
-  size(850, 300);
-  background(200);
+  size(550, 200);
 
   minim   = new Minim(this);
   myAudio = minim.getLineIn(Minim.MONO); 
@@ -63,38 +80,61 @@ void setup() {
   myAudioFFT.linAverages(myAudioRange);
   myAudioFFT.window(FFT.GAUSS);
 
-  oscP5 = new OscP5(this, 9000);
-  dest = new NetAddress("127.0.0.1", 6448);
-  int currentGestureNo = 1;
+  //Default values for Wekinator's dynamic time warping setup
+  oscP5 = new OscP5(this, 9000); //9000
+  dest = new NetAddress("127.0.0.1", 6448); //"127.0.0.1", 6448
 }
+
+
 
 //---------Main Loop start-------
 
 void draw() {
-  long timer = millis() - startTimer;
 
+  long timer = millis() - startTimer;
   currentGestureNo = key-48;
 
-  if (sending == true) {
-    bgColor = color(0, 180, 0);
-  } else {
-    bgColor = color(180, 0, 0);
+  if (mySample != null) {
+    samplePlaying = true;
+    triggerMode = false;
+    
+    if (mySample.position() >= mySample.length()) {
+      samplePlaying = false;
+
+      selectButton.buttonDeactivate();
+      myAudioFFT = new FFT(myAudio.bufferSize(), myAudio.sampleRate());
+      myAudioFFT.linAverages(myAudioRange);
+      myAudioFFT.window(FFT.GAUSS);
+      //Stop training
+      println("Training finished for Gesture number: "+currentGestureNo);
+      OscMessage msg = new OscMessage("/wekinator/control/stopDtwRecording");
+      msg.add(int(currentGestureNo));
+      oscP5.send(msg, dest);
+
+      mySample = null;
+    }
   }
+
+  if (sending) bgColor = c_sending;
+  else bgColor = c_notSending;
+
   background(bgColor);
 
   if (!samplePlaying) myAudioFFT.forward(myAudio.mix);
-  else myAudioFFT.forward(audioSample.mix);
-
+  else myAudioFFT.forward(mySample.mix);
 
   for (int i = 0; i < myAudioRange; ++i) {
-    stroke(0);
-    fill(255);
+    stroke(black);
+    fill(white);
     float tempIndexAvg = (myAudioFFT.getAvg(i) * myAudioAmp) * myAudioIndexAmp;
     float tempIndexCon = constrain(tempIndexAvg, 0, myAudioMax);
-    rect( 100 + (i*50), 100, 50, tempIndexCon);
+    rect(audioBarPosX + (i*audioBarSpread), audioBarPosY, audioBarSpread*0.9, tempIndexCon);
     avgVolume+=tempIndexAvg;
   }
-
+  stroke(black); 
+  line(audioBarPosX, audioBarPosY, audioBarPosX+((myAudioRange+1)*audioBarSpread*0.9), audioBarPosY);
+  stroke(red); 
+  line(audioBarPosX, audioBarPosY+myAudioMax, audioBarPosX+((myAudioRange+1)*audioBarSpread*0.9), audioBarPosY+myAudioMax);
 
   avgVolume = avgVolume/12;
 
@@ -109,51 +149,22 @@ void draw() {
     sending = true;
   }
 
-  text("avgVolume: " + avgVolume, 10, 20);
-  if (sending) text("sending!", 10, 40);
-  text("select gesture number with keyboard", 10, 60);
-  text("current Gesture: "+currentGestureNo, 10, 80);
-  selectButton.drawButton(10, 100, 30);
+
+  text("Average volume: " + avgVolume, UI_X, UI_Y);
+  if (sending) text("Sending!", UI_X, UI_Y+UI_Off);
+  else text("Not sending", UI_X, UI_Y+UI_Off);
+  text("Select gesture no. with number keys", UI_X, UI_Y+UI_Off*2);
+  text("Current Gesture: "+currentGestureNo, UI_X, UI_Y+UI_Off*3);
+
+  selectButton.drawButton("+", UI_X, UI_Y+UI_Off*4, UI_bttns);
+  fill(white);
+  if (samplePlaying) text("Training...", UI_X+UI_bttns*1.2, UI_Y+UI_Off*4+UI_bttns*0.6);
+  toggleButton.drawButton("T", UI_X, UI_Y+UI_Off*5+UI_bttns, UI_bttns);
 
   myAudioIndexAmp = myAudioIndex;
 
-  stroke(255, 0, 0); 
-  line(100, 100+100, width-100, 100+100);
-
-
-  if (audioSample != null) {
-    samplePlaying = true;
-    if (audioSample.position() >= audioSample.length()) {
-      samplePlaying = false;
-      selectButton.buttonDeactivate();
-      myAudioFFT = new FFT(myAudio.bufferSize(), myAudio.sampleRate());
-      myAudioFFT.linAverages(myAudioRange);
-      myAudioFFT.window(FFT.GAUSS);
-      //Stop training
-      OscMessage msg = new OscMessage("/wekinator/control/stopDtwRecording");
-      msg.add(int(currentGestureNo));
-      oscP5.send(msg, dest);
-      audioSample = null;
-    }
-  }
 
   if (sending) sendOsc();
 }
 
 //---------Main Loop end-------
-
-void stop() {
-  myAudio.close();
-  minim.stop();  
-  super.stop();
-}
-
-void sendOsc() {
-  OscMessage msg = new OscMessage("/wek/inputs");
-  for (int i = 0; i < myAudioRange; ++i) {
-    float tempIndexAvg = (myAudioFFT.getAvg(i) * myAudioAmp) * myAudioIndexAmp;
-    msg.add(tempIndexAvg);
-  }
-  msg.add(avgVolume);
-  oscP5.send(msg, dest);
-}
