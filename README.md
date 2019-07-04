@@ -5,7 +5,7 @@ Simple sketch allowing easy handling of audio samples and a live audio input for
 Based on the default Dynamic Time Warping setup in Wekinator.
 
 
-###### Instructions
+### Instructions
 
 Setup your Wekinator Dynamic Time Warping Project to take 14 inputs. 
 This sketch works for any number of gestures when using only live input and up to 9 gestures when using audio samples.
